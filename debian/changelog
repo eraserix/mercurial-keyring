@@ -1,0 +1,73 @@
+mercurial-keyring (1.2.0-1) unstable; urgency=medium
+
+  * New upstream release (Closes: #909004)
+  * Bump compat to 11 without changes.
+  * Bump std version to 4.2.1 without changes.
+
+ -- Christoph Mathys <eraserix@gmail.com>  Tue, 02 Oct 2018 21:58:40 +0200
+
+mercurial-keyring (1.1.8-1) unstable; urgency=medium
+
+  * New upstream release.
+  * Bump compat to 10.
+
+ -- Christoph Mathys <eraserix@gmail.com>  Sun, 04 Jun 2017 12:55:01 +0200
+
+mercurial-keyring (1.1.7-1) unstable; urgency=medium
+
+  * New upstream release
+
+ -- Christoph Mathys <eraserix@gmail.com>  Sun, 18 Dec 2016 20:59:24 +0100
+
+mercurial-keyring (1.1.5-1) unstable; urgency=medium
+
+  * New upstream release
+
+ -- Christoph Mathys <eraserix@gmail.com>  Thu, 18 Aug 2016 19:23:18 +0200
+
+mercurial-keyring (1.1.3-1) unstable; urgency=medium
+
+  * New upstream release.
+  * Update d/watch to use pypi.debian.net.
+  * Policy bumped to 3.9.8 without changes.
+
+ -- Christoph Mathys <eraserix@gmail.com>  Sun, 29 May 2016 13:38:27 +0200
+
+mercurial-keyring (1.1.2-1) unstable; urgency=medium
+
+  * New upstream release.
+    - Add dependency to mercurial-extension-utils. Upstream has split the
+      original extension into a library and the extension part.
+  * Policy bumped to 3.9.7 without changes.
+  * Fix warning dep5-copyright-license-name-not-unique.
+
+ -- Christoph Mathys <eraserix@gmail.com>  Mon, 11 Apr 2016 17:41:30 +0200
+
+mercurial-keyring (0.6.7-1) unstable; urgency=medium
+
+  * New upstream release.
+  * Update packaging to use dh-python and pybuild.
+  * Policy bumped to 3.9.6 without changes.
+  * Update watch file to accomodate changes on pypi.
+
+ -- Christoph Mathys <eraserix@gmail.com>  Mon, 02 Mar 2015 19:09:59 +0100
+
+mercurial-keyring (0.6.2-1) unstable; urgency=low
+
+  * New upstream release.
+  * Policy bumped to 3.9.5 without changes.
+  * Debhelper level set to 9.
+
+ -- Christoph Mathys <eraserix@gmail.com>  Sun, 13 Apr 2014 14:31:15 +0200
+
+mercurial-keyring (0.6.1-1) unstable; urgency=low
+
+  * New upstream release.
+
+ -- Christoph Mathys <eraserix@gmail.com>  Fri, 04 Oct 2013 18:34:26 +0200
+
+mercurial-keyring (0.5.5-1) unstable; urgency=low
+
+  * Initial release. (Closes: #568472)
+
+ -- Christoph Mathys <eraserix@gmail.com>  Sun, 24 Mar 2013 11:01:18 +0100
