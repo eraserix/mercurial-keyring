@@ -1,5 +1,6 @@
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: mercurial-keyring
+Upstream-Contact: Marcin Kasperski <marcin.kasperski@mekk.waw.pl>
 Source: http://pypi.python.org/pypi/mercurial_keyring
 
 Files: *

@@ -2,15 +2,13 @@ Source: mercurial-keyring
 Section: python
 Priority: optional
 Maintainer: Christoph Mathys <eraserix@gmail.com>
-Build-Depends: debhelper (>= 11), python-all (>= 2.6.6-3~), python-setuptools, dh-python
-Standards-Version: 4.2.1
+Build-Depends: debhelper-compat (= 12), python3-all, python3-setuptools, dh-python
+Standards-Version: 4.4.1
 Homepage: http://pypi.python.org/pypi/mercurial_keyring
-X-Python-Version: all
-XB-Python-Version: ${python:Versions}
 
 Package: mercurial-keyring
 Architecture: all
-Depends: ${python:Depends}, ${misc:Depends}, mercurial, mercurial-extension-utils
+Depends: ${python3:Depends}, ${misc:Depends}, mercurial, mercurial-extension-utils (>= 1.5.0)
 Description: Mercurial Keyring Extension
  mercurial_keyring is a Mercurial extension used to securely save HTTP
  and SMTP authentication passwords in password databases (GNOME Keyring,
