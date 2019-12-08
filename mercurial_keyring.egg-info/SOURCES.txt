@@ -1,6 +1,10 @@
+.bitbucket.url
+.hgignore
+.hgtags
 HISTORY.txt
 LICENSE.txt
 MANIFEST.in
+README-devel.txt
 README.txt
 mercurial_keyring.py
 setup.py
@@ -10,3 +14,5 @@ mercurial_keyring.egg-info/dependency_links.txt
 mercurial_keyring.egg-info/requires.txt
 mercurial_keyring.egg-info/top_level.txt
 mercurial_keyring.egg-info/zip-safe
+tests/backend/auth_hg_serve.cfg
+tests/backend/auth_hg_serve.py

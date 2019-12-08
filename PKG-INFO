@@ -1,6 +1,6 @@
 Metadata-Version: 1.1
 Name: mercurial_keyring
-Version: 1.2.0
+Version: 1.3.0
 Summary: Mercurial Keyring Extension
 Home-page: http://bitbucket.org/Mekk/mercurial_keyring
 Author: Marcin Kasperski
@@ -347,11 +347,11 @@ Description: .. -*- mode: rst; compile-command: "rst2html README.txt README.html
         Those almost always mean that *natural* keyring backend for given
         desktop type doesn't work, or is not present at all.  For example,
         some necessary runtime component can be down (say, you use Linux, but
-        have neither Gnome Keyring, nor KDE Wallet, running). Or appropriate
-        backend is not installed because it could not be build during
-        keyring_ library installation (maybe because some required library
-        was not present at the moment of keyring installation, or maybe because compiler
-        as such is not present on the system).
+        neither Gnome Keyring, nor KDE Wallet, is running). Or appropriate
+        backend is not installed because it could not be build during keyring_
+        library installation (maybe because some required library was not
+        present at the moment of keyring installation, or maybe because
+        compiler as such is not present on the system).
         
         To diagnose such problems, try using ``keyring`` utility, as described
         on keyring_ documentation page, for example by::
@@ -373,17 +373,31 @@ Description: .. -*- mode: rst; compile-command: "rst2html README.txt README.html
         list, or issue tracker. Typically it will turn out, that you need to
         install some missing tool, or library, and reinstall keyring.
         
+        .. note::
+        
+           Depending on keyring_ version, installation of some dependency may
+           resolve problem. For example (as of late 2018), I got KDE Wallet
+           backend working with pip-installed keyring after::
+        
+               pip install dbus-python
+        
+           Note also, that recent versions of keyring library (since version 12) use Python
+           entrypoints to find available backends. Those are incompatible with
+           some binary packaging methods (like ``py2app``) and may cause
+           problems. In particular there were packaged installations of TortoiseHG
+           which were unable to load keyring backends. See `#61 <https://bitbucket.org/Mekk/mercurial_keyring/issues/61/tortoisehg-encounters-unknown-exception>`_ for some more details.
+        
+        
         If ``keyring`` command works, but mercurial with mercurial_keyring does not,
         try enforcing  proper backend (by means of ``keyringrc.cfg``, see above).
         Only if this doesn't help, there may be a bug in mercurial_keyring.
         
-        .. note::
+        By far easiest way to have properly working keyring is to use packaged
+        binary version (like ``python-keyring`` Ubuntu package, or keyring
+        bundled with TortoiseHG on some systems). If you pip-installed keyring
+        and it doesn't work, you may consider removing it via ``pip uninstall
+        keyring`` and looking for binary package instead.
         
-           By far easiest way to have properly working keyring is to use
-           packaged binary version (like ``python-keyring`` Ubuntu package, or
-           keyring bundled with TortoiseHG on some systems). If you pip-installed
-           keyring and it doesn't work, you may consider ``pip uninstall keyring``
-           and look for binary package instead.
         
         
         
@@ -422,6 +436,8 @@ Classifier: Environment :: Console
 Classifier: Intended Audience :: Developers
 Classifier: License :: DFSG approved
 Classifier: License :: OSI Approved :: BSD License
+Classifier: Programming Language :: Python :: 2
+Classifier: Programming Language :: Python :: 3
 Classifier: Operating System :: OS Independent
 Classifier: Topic :: Software Development :: Libraries
 Classifier: Topic :: Software Development :: Libraries :: Python Modules

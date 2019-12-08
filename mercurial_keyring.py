@@ -51,12 +51,17 @@ backend (by default keyring guesses, usually correctly, for example
 you get KDE Wallet under KDE, and Gnome Keyring under Gnome or Unity).
 '''
 
-import urllib2
-import smtplib
 import socket
 import os
 import sys
 import re
+if sys.version_info[0] < 3:
+    from urllib2 import (
+        HTTPPasswordMgrWithDefaultRealm, AbstractBasicAuthHandler, AbstractDigestAuthHandler)
+else:
+    from urllib.request import (
+        HTTPPasswordMgrWithDefaultRealm, AbstractBasicAuthHandler, AbstractDigestAuthHandler)
+import smtplib
 
 from mercurial import util, sslutil, error
 from mercurial.i18n import _
@@ -136,6 +141,11 @@ def import_keyring():
             "ctypes",
             "secretstorage.exceptions",
             "fs.opener",
+            "win32ctypes.pywin32",
+            "win32ctypes.pywin32.pywintypes",
+            "win32ctypes.pywin32.win32cred",
+            "pywintypes",
+            "win32cred",
         ])
     if was_imported_now:
         # Shut up warning about uninitialized logging by keyring
@@ -174,12 +184,23 @@ class PasswordStore(object):
 
     def clear_http_password(self, url, username):
         """Drops saved password"""
-        self.set_http_password(url, username, "")
+        self.set_http_password(url, username, b"")
 
     @staticmethod
     def _format_http_key(url, username):
         """Construct actual key for password identification"""
-        return "%s@@%s" % (username, url)
+        # keyring expects str, mercurial feeds as here mostly with bytes
+        key = "%s@@%s" % (meu.pycompat.sysstr(username),
+                          meu.pycompat.sysstr(url))
+        return key
+
+    @staticmethod
+    def _format_smtp_key(machine, port, username):
+        """Construct key for SMTP password identification"""
+        key = "%s@@%s:%s" % (meu.pycompat.sysstr(username),
+                             meu.pycompat.sysstr(machine),
+                             str(port))
+        return key
 
     def get_smtp_password(self, machine, port, username):
         """Checks for SMTP password in keyring, returns
@@ -198,11 +219,6 @@ class PasswordStore(object):
         self.set_smtp_password(machine, port, username, "")
 
     @staticmethod
-    def _format_smtp_key(machine, port, username):
-        """Construct key for SMTP password identification"""
-        return "%s@@%s:%s" % (username, machine, str(port))
-
-    @staticmethod
     def _read_password_from_keyring(pwdkey):
         """Physically read from keyring"""
         keyring = import_keyring()
@@ -210,10 +226,12 @@ class PasswordStore(object):
             password = keyring.get_password(KEYRING_SERVICE, pwdkey)
         except Exception as err:
             ui = uimod.ui()
-            ui.warn(_("keyring: keyring backend doesn't seem to work, password can not be restored. Falling back to prompts. Error details: %s\n") % str(err))
-            return ''
+            ui.warn(meu.ui_string(
+                "keyring: keyring backend doesn't seem to work, password can not be restored. Falling back to prompts. Error details: %s\n",
+                err))
+            return b''
         # Reverse recoding from next routine
-        if isinstance(password, unicode):
+        if isinstance(password, meu.pycompat.unicode):
             return encoding.tolocal(password.encode('utf-8'))
         return password
 
@@ -222,14 +240,20 @@ class PasswordStore(object):
         """Physically write to keyring"""
         keyring = import_keyring()
         # keyring in general expects unicode.
-        # Mercurial provides "local" encoding. See #33
-        password = encoding.fromlocal(password).decode('utf-8')
+        # Mercurial provides "local" encoding. See #33.
+        # py3 adds even more fun as we get already unicode from getpass.
+        # To handle those quirks, let go through encoding.fromlocal in case we
+        # got bytestr here, this will handle both normal py2 and emergency py3 cases.
+        if isinstance(password, bytes):
+            password = encoding.fromlocal(password).decode('utf-8')
         try:
             keyring.set_password(
                 KEYRING_SERVICE, pwdkey, password)
         except Exception as err:
             ui = uimod.ui()
-            ui.warn(_("keyring: keyring backend doesn't seem to work, password was not saved. Error details: %s\n") % str(err))
+            ui.warn(meu.ui_string(
+                "keyring: keyring backend doesn't seem to work, password was not saved. Error details: %s\n", 
+                err))
 
 
 password_store = PasswordStore()
@@ -238,11 +262,6 @@ password_store = PasswordStore()
 ############################################################
 # Various utils
 ############################################################
-
-def _debug(ui, msg):
-    """Generic debug message"""
-    ui.debug("keyring: " + msg + "\n")
-
 
 class PwdCache(object):
     """Short term cache, used to preserve passwords
@@ -261,7 +280,7 @@ class PwdCache(object):
         return self._cache.get(cache_key)
 
 
-_re_http_url = re.compile(r'^https?://')
+_re_http_url = re.compile(b'^https?://')
 
 
 def is_http_path(url):
@@ -316,18 +335,18 @@ class HTTPPasswordHandler(object):
         ui = pwmgr.ui
 
         parsed_url, url_user, url_passwd = self.unpack_url(authuri)
-        base_url = str(parsed_url)
-        ui.debug(_('keyring: base url: %s, url user: %s, url pwd: %s\n') %
-                 (base_url, url_user or '', url_passwd and '******' or ''))
+        base_url = bytes(parsed_url)
+        ui.debug(meu.ui_string('keyring: base url: %s, url user: %s, url pwd: %s\n',
+                               base_url, url_user, url_passwd and b'******' or b''))
 
         # Extract username (or password) stored directly in url
         if url_user and url_passwd:
             return url_user, url_passwd, self.SRC_URL, base_url
 
         # Extract data from urllib (in case it was already stored)
-        if isinstance(pwmgr, urllib2.HTTPPasswordMgrWithDefaultRealm):
+        if isinstance(pwmgr, HTTPPasswordMgrWithDefaultRealm):
             urllib_user, urllib_pwd = \
-                urllib2.HTTPPasswordMgrWithDefaultRealm.find_user_password(
+                HTTPPasswordMgrWithDefaultRealm.find_user_password(
                     pwmgr, realm, authuri)
         else:
             urllib_user, urllib_pwd = pwmgr.passwddb.find_user_password(
@@ -359,7 +378,8 @@ class HTTPPasswordHandler(object):
 
         # Load from keyring.
         if actual_user:
-            ui.debug(_("keyring: looking for password (user %s, url %s)\n") % (actual_user, keyring_url))
+            ui.debug(meu.ui_string("keyring: looking for password (user %s, url %s)\n",
+                                   actual_user, keyring_url))
             keyring_pwd = password_store.get_http_password(keyring_url, actual_user)
             if keyring_pwd:
                 return actual_user, keyring_pwd, self.SRC_KEYRING, keyring_url
@@ -373,16 +393,20 @@ class HTTPPasswordHandler(object):
             raise error.Abort(_('keyring: http authorization required but program used in non-interactive mode'))
 
         if not user:
-            ui.status(_("keyring: username not specified in hgrc (or in url). Password will not be saved.\n"))
+            ui.status(meu.ui_string("keyring: username not specified in hgrc (or in url). Password will not be saved.\n"))
 
-        ui.write(_("http authorization required\n"))
-        ui.status(_("realm: %s\n") % realm)
-        ui.status(_("url: %s\n") % url)
+        ui.write(meu.ui_string("http authorization required\n"))
+        ui.status(meu.ui_string("realm: %s\n",
+                                realm))
+        ui.status(meu.ui_string("url: %s\n",
+                                url))
         if user:
-            ui.write(_("user: %s (fixed in hgrc or url)\n" % user))
+            ui.write(meu.ui_string("user: %s (fixed in hgrc or url)\n", 
+                                   user))
         else:
-            user = ui.prompt(_("user:"), default=None)
-        pwd = ui.getpass(_("password: "))
+            user = ui.prompt(meu.ui_string("user:"),
+                             default=None)
+        pwd = ui.getpass(meu.ui_string("password: "))
         return user, pwd
 
     def find_auth(self, pwmgr, realm, authuri, req):
@@ -402,7 +426,8 @@ class HTTPPasswordHandler(object):
             if src != self.SRC_MEMCACHE:
                 self.pwd_cache.store(realm, final_url, user, pwd)
             self._note_last_reply(realm, authuri, user, req)
-            _debug(ui, _("Password found in " + src))
+            ui.debug(meu.ui_string("keyring: Password found in %s\n",
+                                   src))
             return user, pwd
 
         # Last resort: interactive prompt
@@ -413,21 +438,22 @@ class HTTPPasswordHandler(object):
             # It is done only if username is permanently set.
             # Otherwise we won't be able to find the password so it
             # does not make much sense to preserve it
-            _debug(ui, _("Saving password for %s to keyring") % user)
+            ui.debug(meu.ui_string("keyring: Saving password for %s to keyring\n",
+                                   user))
             try:
                 password_store.set_http_password(final_url, user, pwd)
-            except Exception, e:
+            except Exception as e:
                 keyring = import_keyring()
                 if isinstance(e, keyring.errors.PasswordSetError):
                     ui.traceback()
-                    ui.warn(_("warning: failed to save password in keyring\n"))
+                    ui.warn(meu.ui_string("warning: failed to save password in keyring\n"))
                 else:
                     raise e
 
         # Saving password to the memory cache
         self.pwd_cache.store(realm, final_url, user, pwd)
         self._note_last_reply(realm, authuri, user, req)
-        _debug(ui, _("Manually entered password"))
+        ui.debug(meu.ui_string("keyring: Manually entered password\n"))
         return user, pwd
 
     def get_url_config(self, ui, parsed_url, user):
@@ -439,16 +465,16 @@ class HTTPPasswordHandler(object):
         found. username and password can be None (if unset), if prefix
         is not found, url itself is returned.
         """
-        base_url = str(parsed_url)
-
         from mercurial.httpconnection import readauthforuri
-        _debug(ui, _("Checking for hgrc info about url %s, user %s") % (base_url, user))
-        res = readauthforuri(ui, base_url, user)
+        ui.debug(meu.ui_string("keyring: checking for hgrc info about url %s, user %s\n",
+                               parsed_url, user))
+
+        res = readauthforuri(ui, bytes(parsed_url), user)
         # If it user-less version not work, let's try with added username to handle
         # both config conventions
         if (not res) and user:
             parsed_url.user = user
-            res = readauthforuri(ui, str(parsed_url), user)
+            res = readauthforuri(ui, bytes(parsed_url), user)
             parsed_url.user = None
         if res:
             group, auth_token = res
@@ -456,18 +482,20 @@ class HTTPPasswordHandler(object):
             auth_token = None
 
         if auth_token:
-            username = auth_token.get('username')
-            password = auth_token.get('password')
-            prefix = auth_token.get('prefix')
+            username = auth_token.get(b'username')
+            password = auth_token.get(b'password')
+            prefix = auth_token.get(b'prefix')
         else:
             username = user
             password = None
             prefix = None
 
-        password_url = self.password_url(base_url, prefix)
+        password_url = self.password_url(bytes(parsed_url), prefix)
 
-        _debug(ui, _("Password url: %s, user: %s, password: %s (prefix: %s)") % (
-            password_url, username, '********' if password else '', prefix))
+        ui.debug(meu.ui_string("keyring: Password url: %s, user: %s, password: %s (prefix: %s)\n",
+                               password_url, username,
+                               b'********' if password else b'',
+                               prefix))
 
         return username, password, password_url
 
@@ -492,7 +520,9 @@ class HTTPPasswordHandler(object):
             if (self.last_reply['realm'] == realm) \
                and (self.last_reply['authuri'] == authuri) \
                and (self.last_reply['req'] == req):
-                _debug(ui, _("Working after bad authentication, cached passwords not used %s") % str(self.last_reply))
+                ui.debug(meu.ui_string(
+                    "keyring: Working after bad authentication, cached passwords not used %s\n",
+                    str(self.last_reply)))
                 return True
         return False
 
@@ -501,15 +531,15 @@ class HTTPPasswordHandler(object):
         """Calculates actual url identifying the password. Takes
         configured prefix under consideration (so can be shorter
         than repo url)"""
-        if not prefix or prefix == '*':
+        if not prefix or prefix == b'*':
             return base_url
-        scheme, hostpath = base_url.split('://', 1)
-        p = prefix.split('://', 1)
+        scheme, hostpath = base_url.split(b'://', 1)
+        p = prefix.split(b'://', 1)
         if len(p) > 1:
             prefix_host_path = p[1]
         else:
             prefix_host_path = prefix
-        password_url = scheme + '://' + prefix_host_path
+        password_url = scheme + b'://' + prefix_host_path
         return password_url
 
     @staticmethod
@@ -529,9 +559,12 @@ class HTTPPasswordHandler(object):
         where url is mercurial.util.url object already stripped of all those
         params.
         """
+        # In case of py3, util.url expects bytes
+        authuri = meu.pycompat.bytestr(authuri)
+
         # mercurial.util.url, rather handy url parser
         parsed_url = util.url(authuri)
-        parsed_url.query = ''
+        parsed_url.query = b''
         parsed_url.fragment = None
         # Strip arguments to get actual remote repository url.
         # base_url = "%s://%s%s" % (parsed_url.scheme, parsed_url.netloc,
@@ -558,6 +591,10 @@ def find_user_password(self, realm, authuri):
     Passwords are saved in gnome keyring, OSX/Chain or other platform
     specific storage and keyed by the repository url
     """
+    # In sync with hg 5.0
+    assert isinstance(realm, (type(None), str))
+    assert isinstance(authuri, str)
+
     # Extend object attributes
     if not hasattr(self, '_pwd_handler'):
         self._pwd_handler = HTTPPasswordHandler()
@@ -570,7 +607,7 @@ def find_user_password(self, realm, authuri):
     return self._pwd_handler.find_auth(self, realm, authuri, req)
 
 
-@monkeypatch_method(urllib2.AbstractBasicAuthHandler, "http_error_auth_reqed")
+@monkeypatch_method(AbstractBasicAuthHandler, "http_error_auth_reqed")
 def basic_http_error_auth_reqed(self, authreq, host, req, headers):
     """Preserves current HTTP request so it can be consulted
     in find_user_password above"""
@@ -581,7 +618,7 @@ def basic_http_error_auth_reqed(self, authreq, host, req, headers):
         self.passwd._http_req = None
 
 
-@monkeypatch_method(urllib2.AbstractDigestAuthHandler, "http_error_auth_reqed")
+@monkeypatch_method(AbstractDigestAuthHandler, "http_error_auth_reqed")
 def digest_http_error_auth_reqed(self, authreq, host, req, headers):
     """Preserves current HTTP request so it can be consulted
     in find_user_password above"""
@@ -613,12 +650,13 @@ def try_smtp_login(ui, smtp_obj, username, password):
         return False
     try:
         ui.note(_('(authenticating to mail server as %s)\n') %
-                 (username))
+                username)
         smtp_obj.login(username, password)
         return True
-    except smtplib.SMTPException, inst:
+    except smtplib.SMTPException as inst:
         if inst.smtp_code == 535:
-            ui.status(_("SMTP login failed: %s\n\n") % inst.smtp_error)
+            ui.status(meu.ui_string("SMTP login failed: %s\n\n",
+                                    inst.smtp_error))
             return False
         else:
             raise error.Abort(inst)
@@ -635,7 +673,6 @@ def keyring_supported_smtp(ui, username):
     >>>>> and # <<<<< markers, there are also some fixes which make
     the code working on various Mercurials (like parsebool import).
     """
-    
     try:
         from mercurial.utils.stringutil import parsebool
     except ImportError:
@@ -710,10 +747,10 @@ def keyring_supported_smtp(ui, username):
     def send(sender, recipients, msg):
         try:
             return s.sendmail(sender, recipients, msg)
-        except smtplib.SMTPRecipientsRefused, inst:
+        except smtplib.SMTPRecipientsRefused as inst:
             recipients = [r[1] for r in inst.recipients.values()]
             raise error.Abort('\n' + '\n'.join(recipients))
-        except smtplib.SMTPException, inst:
+        except smtplib.SMTPException as inst:
             raise error.Abort(inst)
 
     return send
@@ -749,7 +786,7 @@ cmdtable = {}
 command = meu.command(cmdtable)
 
 
-@command('keyring_check',
+@command(b'keyring_check',
          [],
          _("keyring_check [PATH]"),
          optionalrepo=True)
@@ -762,7 +799,7 @@ def cmd_keyring_check(ui, repo, *path_args, **opts):   # pylint: disable=unused-
     are HTTP-like.
     """
     defined_paths = [(name, url)
-                     for name, url in ui.configitems('paths')]
+                     for name, url in ui.configitems(b'paths')]
     if path_args:
         # Maybe parameter is an alias
         defined_paths_dic = dict(defined_paths)
@@ -770,36 +807,40 @@ def cmd_keyring_check(ui, repo, *path_args, **opts):   # pylint: disable=unused-
                  for path_arg in path_args]
     else:
         if not repo:
-            ui.status(_("Url to check not specified. Either run ``hg keyring_check https://...``, or run the command inside some repository (to test all defined paths).\n"))
+            ui.status(meu.ui_string("Url to check not specified. Either run ``hg keyring_check https://...``, or run the command inside some repository (to test all defined paths).\n"))
             return
         paths = [(name, url) for name, url in defined_paths]
 
     if not paths:
-        ui.status(_("keyring_check: no paths defined\n"))
+        ui.status(meu.ui_string("keyring_check: no paths defined\n"))
         return
 
     handler = HTTPPasswordHandler()
 
-    ui.status(_("keyring password save status:\n"))
+    ui.status(meu.ui_string("keyring password save status:\n"))
     for name, url in paths:
         if not is_http_path(url):
             if path_args:
-                ui.status(_("    %s: non-http path (%s)\n") % (name, url))
+                ui.status(meu.ui_string("    %s: non-http path (%s)\n",
+                                        name, url))
             continue
         user, pwd, source, final_url = handler.get_credentials(
             make_passwordmgr(ui), name, url)
         if pwd:
-            ui.status(_("    %s: password available, source: %s, bound to user %s, url %s\n") % (
+            ui.status(meu.ui_string(
+                "    %s: password available, source: %s, bound to user %s, url %s\n",
                 name, source, user, final_url))
         elif user:
-            ui.status(_("    %s: password not available, once entered, will be bound to user %s, url %s\n") % (
+            ui.status(meu.ui_string(
+                "    %s: password not available, once entered, will be bound to user %s, url %s\n",
                 name, user, final_url))
         else:
-            ui.status(_("    %s: password not available, user unknown, url %s\n") % (
+            ui.status(meu.ui_string(
+                "    %s: password not available, user unknown, url %s\n",
                 name, final_url))
 
 
-@command('keyring_clear',
+@command(b'keyring_clear',
          [],
          _('hg keyring_clear PATH-OR-ALIAS'),
          optionalrepo=True)
@@ -811,12 +852,14 @@ def cmd_keyring_clear(ui, repo, path, **opts):  # pylint: disable=unused-argumen
     of path alias (``bitbucket``).
     """
     path_url = path
-    for name, url in ui.configitems('paths'):
+    for name, url in ui.configitems(b'paths'):
         if name == path:
             path_url = url
             break
     if not is_http_path(path_url):
-        ui.status(_("%s is not a http path (and %s can't be resolved as path alias)\n") % (path, path_url))
+        ui.status(meu.ui_string(
+            "%s is not a http path (and %s can't be resolved as path alias)\n",
+            path, path_url))
         return
 
     handler = HTTPPasswordHandler()
@@ -824,20 +867,21 @@ def cmd_keyring_clear(ui, repo, path, **opts):  # pylint: disable=unused-argumen
     user, pwd, source, final_url = handler.get_credentials(
         make_passwordmgr(ui), path, path_url)
     if not user:
-        ui.status(_("Username not configured for url %s\n") % final_url)
+        ui.status(meu.ui_string("Username not configured for url %s\n",
+                                final_url))
         return
     if not pwd:
-        ui.status(_("No password is saved for user %s, url %s\n") % (
-            user, final_url))
+        ui.status(meu.ui_string("No password is saved for user %s, url %s\n",
+                                user, final_url))
         return
 
     if source != handler.SRC_KEYRING:
-        ui.status(_("Password for user %s, url %s is saved in %s, not in keyring\n") % (
-            user, final_url, source))
+        ui.status(meu.ui_string("Password for user %s, url %s is saved in %s, not in keyring\n",
+                                user, final_url, source))
 
     password_store.clear_http_password(final_url, user)
-    ui.status(_("Password removed for user %s, url %s\n") % (
-        user, final_url))
+    ui.status(meu.ui_string("Password removed for user %s, url %s\n",
+                            user, final_url))
 
 
 buglink = 'https://bitbucket.org/Mekk/mercurial_keyring/issues'
