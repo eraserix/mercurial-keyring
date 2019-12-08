@@ -1,5 +1,5 @@
 
-VERSION = '1.2.0'
+VERSION = '1.3.0'
 
 # pylint: disable=unused-import
 
@@ -29,6 +29,8 @@ setup(
         'Intended Audience :: Developers',
         'License :: DFSG approved',
         'License :: OSI Approved :: BSD License',
+        'Programming Language :: Python :: 2',
+        'Programming Language :: Python :: 3',
         'Operating System :: OS Independent',
         'Topic :: Software Development :: Libraries',
         'Topic :: Software Development :: Libraries :: Python Modules',
@@ -36,7 +38,7 @@ setup(
     ],
     install_requires=[
         'keyring>=0.3',
-        'mercurial_extension_utils>=1.3.6',
+        'mercurial_extension_utils>=1.5.0',
     ],
     zip_safe=True,
 )
